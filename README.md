@@ -1,4 +1,4 @@
-# Axivity Post-Processing Pipeline v1.5
+# Axivity Post-Processing Pipeline v2
 
 Post-processing pipeline for epoch-level accelerometer data exported from Axivity sensors. For each subject it filters the data, segments it into days, optionally maps work shifts, and computes a wide range of activity variables.
 
@@ -19,16 +19,20 @@ Both scripts read configuration from `config.yaml` in the working directory. Res
 ### Steps
 
 1. Open a terminal (Anaconda Prompt on Windows)
-2. Navigate to the project folder:
+2. Clone the repository:
    ```
-   cd axivity-pp-v1.5
+   git clone https://github.com/AtleSkjelbred/axivity-pp-v2.git
    ```
-3. Create and activate a Python environment:
+3. Navigate to the project folder:
+   ```
+   cd axivity-pp-v2
+   ```
+4. Create and activate a Python environment:
    ```
    conda create --name axivity python=3.9 --no-default-packages -y
    conda activate axivity
    ```
-4. Install dependencies:
+5. Install dependencies:
    ```
    pip install pandas pyyaml matplotlib numpy
    ```
