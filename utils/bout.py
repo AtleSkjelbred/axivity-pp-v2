@@ -54,6 +54,8 @@ def count_bouts(df, start, end, epm, settings):
         jump = 0
     else:
         jump = skip(df, start, codes, column, end)
+        if start + jump >= end or df[column][start + jump] not in codes:
+            return get_bout_categories(temp, epm, settings)
         current_code = df[column][start + jump]
     length, noise = 0, 0
 
@@ -73,12 +75,16 @@ def count_bouts(df, start, end, epm, settings):
                 length = 1 if prev_matches else 2
                 noise = 0
                 try:
-                    current_code = value if value in codes else df[column][i + skip(df, i, codes, column, end)]
+                    next_code = value if value in codes else df[column][i + skip(df, i, codes, column, end)]
                 except KeyError:
                     break
+                if next_code not in codes:
+                    break
+                current_code = next_code
         else:
             length += 1
-    temp[current_code].append(length)
+    if current_code in codes:
+        temp[current_code].append(length)
     return get_bout_categories(temp, epm, settings)
 
 

@@ -33,8 +33,8 @@ from main import manage_config
 
 def main(data_folder, settings):
     """Batch-process all CSV files and compute per-shift activity variables."""
-    outgoing_df = pd.DataFrame()
-    outgoing_qc = pd.DataFrame()
+    results = []
+    qc_results = []
     error_log = []
     base_path = os.getcwd()
     results_path = os.path.join(base_path, 'results')
@@ -60,17 +60,19 @@ def main(data_folder, settings):
         ot_index, ot_qc = other_times(df, subject_id, True, ot_df, settings['time_column'])
 
         if ot_qc:
-            outgoing_qc = pd.concat([pd.DataFrame(ot_qc, index=[0]), outgoing_qc], ignore_index=True)
+            qc_results.append(ot_qc)
 
         if ot_index:
             ot_index, between_index = get_between_shifts(ot_index, epm, epd, len(df), settings.get('min_shift_minutes', 60))
             new_line = build_output(df, subject_id, ot_index, between_index, epm, settings)
-            outgoing_df = pd.concat([pd.DataFrame(new_line, index=[0]), outgoing_df], ignore_index=True)
+            results.append(new_line)
 
     if not os.path.exists(results_path):
         os.makedirs(results_path)
 
     timestamp = datetime.now().strftime("%d.%m.%Y %H.%M")
+    outgoing_df = pd.DataFrame(results) if results else pd.DataFrame()
+    outgoing_qc = pd.DataFrame(qc_results) if qc_results else pd.DataFrame()
     outgoing_df.to_csv(os.path.join(results_path, f'ot shift data {timestamp}.csv'), index=False)
     outgoing_qc.to_csv(os.path.join(results_path, f'ot shift qc {timestamp}.csv'), index=False)
 

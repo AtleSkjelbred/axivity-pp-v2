@@ -42,8 +42,8 @@ from utils.barcode import gen_plot, plotter
 
 def main(data_folder, settings):
     """Batch-process all CSV files in data_folder and write results."""
-    outgoing_qc = pd.DataFrame()
-    outgoing_df = pd.DataFrame()
+    results = []
+    qc_results = []
     error_log = []
     base_path = os.getcwd()
     results_path = os.path.join(base_path, 'results')
@@ -88,8 +88,8 @@ def main(data_folder, settings):
             calculate_variables(df, new_line, index, ot_index, date_info, ot_date_info, variables, epm, epd, settings)
 
         if ot_qc:
-            outgoing_qc = pd.concat([pd.DataFrame(ot_qc, index=[0]), outgoing_qc], ignore_index=True)
-        outgoing_df = pd.concat([pd.DataFrame(new_line, index=[0]), outgoing_df], ignore_index=True)
+            qc_results.append(ot_qc)
+        results.append(new_line)
 
         if settings['barcode_run']:
             if index and len(index) >= settings['min_days']:
@@ -100,6 +100,8 @@ def main(data_folder, settings):
         os.makedirs(results_path)
 
     timestamp = datetime.now().strftime("%d.%m.%Y %H.%M")
+    outgoing_qc = pd.DataFrame(qc_results) if qc_results else pd.DataFrame()
+    outgoing_df = pd.DataFrame(results) if results else pd.DataFrame()
     outgoing_qc.to_csv(os.path.join(results_path, f'other time qc {timestamp}.csv'), index=False)
     outgoing_df.to_csv(os.path.join(results_path, f'post process data {timestamp}.csv'), index=False)
 
