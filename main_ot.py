@@ -167,11 +167,20 @@ def build_output(df, subject_id, ot_index, between_index, epm, settings):
 
     bout_codes = settings['bout_codes']
 
+    time_col = settings['time_column']
+
     for key in sorted(ot_index.keys()):
         # Shift variables
         start, end = ot_index[key]
         epochs = end - start
         prefix = f'shift{key}'
+        line[f'{prefix}_start_datetime'] = datetime.strptime(df[time_col][start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        if end in df.index:
+            line[f'{prefix}_end_datetime'] = datetime.strptime(df[time_col][end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        else:
+            line[f'{prefix}_end_datetime'] = datetime.strptime(df[time_col][end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        line[f'{prefix}_start_wkday_nr'] = datetime.strptime(df[time_col][start][:10], "%Y-%m-%d").weekday() + 1
+        line[f'{prefix}_start_wkday_str'] = datetime.strptime(df[time_col][start][:10], "%Y-%m-%d").strftime('%A')
         line[f'{prefix}_epochs'] = epochs
         line[f'{prefix}_min'] = epochs / epm
         for code in ai_codes:
@@ -189,10 +198,19 @@ def build_output(df, subject_id, ot_index, between_index, epm, settings):
                 line[f'{prefix}_{code_name[code]}_bout_c{cat + 1}'] = val
 
         # Between variables for the same key
-        if key in between_index:
+        if key in between_index and between_index[key]:
             ranges = between_index[key]
+            b_start = ranges[0][0]
+            b_end = ranges[-1][1]
             epochs = sum(end - start for start, end in ranges)
             prefix = f'between{key}'
+            line[f'{prefix}_start_datetime'] = datetime.strptime(df[time_col][b_start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+            if b_end in df.index:
+                line[f'{prefix}_end_datetime'] = datetime.strptime(df[time_col][b_end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+            else:
+                line[f'{prefix}_end_datetime'] = datetime.strptime(df[time_col][b_end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+            line[f'{prefix}_start_wkday_nr'] = datetime.strptime(df[time_col][b_start][:10], "%Y-%m-%d").weekday() + 1
+            line[f'{prefix}_start_wkday_str'] = datetime.strptime(df[time_col][b_start][:10], "%Y-%m-%d").strftime('%A')
             line[f'{prefix}_epochs'] = epochs
             line[f'{prefix}_min'] = epochs / epm
             for code in ai_codes:
