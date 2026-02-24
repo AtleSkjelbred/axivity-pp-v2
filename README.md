@@ -41,11 +41,15 @@ If you already have the codebase and environment set up:
    ```
    cd axivity-pp-v2
    ```
-2. Pull the latest changes:
+2. Check if you are up to date:
+   ```
+   git status
+   ```
+3. Pull the latest changes:
    ```
    git pull
    ```
-3. Activate the environment:
+4. Activate the environment:
    ```
    conda activate axivity
    ```
