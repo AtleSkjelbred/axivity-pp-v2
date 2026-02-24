@@ -187,7 +187,7 @@ See [variables.md](variables.md) for full documentation of every output column, 
 ## Project Structure
 
 ```
-axivity-pp-v1.5/
+axivity-pp-v2/
     config.yaml          Configuration file
     main.py              Full analysis pipeline
     main_ot.py           Work-shift only pipeline
