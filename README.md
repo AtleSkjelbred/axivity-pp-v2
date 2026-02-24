@@ -9,32 +9,50 @@ There are two entry points:
 
 Both scripts read configuration from `config.yaml` in the working directory. Results are written to `./results/`.
 
-## Installation
+## Getting Started
 
 ### Requirements
 
 - Python 3.9+
 - [Anaconda](https://www.anaconda.com/) (recommended) or any Python environment manager
 
-### Steps
+### First-time setup
 
-1. Open a terminal (Anaconda Prompt on Windows)
-2. Clone the repository:
+Open a terminal (Anaconda Prompt on Windows):
+
+1. Clone the repository:
    ```
    git clone https://github.com/AtleSkjelbred/axivity-pp-v2.git
    ```
-3. Navigate to the project folder:
+2. Navigate to the project folder:
    ```
    cd axivity-pp-v2
    ```
-4. Create and activate a Python environment:
+3. Create and activate a Python environment:
    ```
    conda create --name axivity python=3.9 --no-default-packages -y
    conda activate axivity
    ```
-5. Install dependencies:
+4. Install dependencies:
    ```
    pip install pandas pyyaml matplotlib numpy
+   ```
+
+### Updating an existing installation
+
+If you already have the codebase and environment set up:
+
+1. Navigate to the project folder:
+   ```
+   cd axivity-pp-v2
+   ```
+2. Pull the latest changes:
+   ```
+   git pull
+   ```
+3. Activate the environment:
+   ```
+   conda activate axivity
    ```
 
 ## Input Data
