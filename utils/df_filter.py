@@ -22,7 +22,7 @@ def non_wear_ends(new_line, df, epm, settings) -> pd.DataFrame:
     codes = settings['codes']
     start_len = len(df)
     if settings['nw_column'] in df.columns and settings['nw_ends']:
-        df = remove_inactive_ends(df, settings['nw_column'], codes['nw_no_sensors'], epm * settings['nw_ends_min'], settings['nw_ends_pct'])
+        df = remove_inactive_ends(df, settings['nw_column'], settings['nw_codes_map']['nw_no_sensors'], epm * settings['nw_ends_min'], settings['nw_ends_pct'])
     if settings['bug_ends']:
         df = remove_inactive_ends(df, settings['act_column'], codes['lying'], epm * settings['bug_ends_min'], settings['bug_ends_pct'])
         df = remove_inactive_ends(df, settings['act_column'], codes['sitting'], epm * settings['bug_ends_min'], settings['bug_ends_pct'])
@@ -91,6 +91,9 @@ def filter_predictions(df: pd.DataFrame, settings: dict) -> pd.DataFrame:
     if settings['adjust_cyc_interval']:
         df = cycling_interval(df, settings)
 
+    if settings['code_remap']:
+        df[act_col] = df[act_col].replace(settings['code_remap'])
+
     if settings['ai_variables'] or settings['ait_variables']:
         inactive = [codes['sitting'], codes['lying']]
         df[settings['ai_column']] = ['I' if i in inactive else 'A' for i in df[act_col]]
@@ -121,7 +124,7 @@ def filter_days(df, index, settings, epd):
     codes = settings['codes']
     conditions = []
     if settings['nw_days']:
-        conditions.append((settings['nw_column'], codes['nw_no_sensors'], settings['nw_days_pct']))
+        conditions.append((settings['nw_column'], settings['nw_codes_map']['nw_no_sensors'], settings['nw_days_pct']))
     if settings['bug_days']:
         if settings['bug_lying']:
             conditions.append((settings['act_column'], codes['lying'], settings['bug_days_pct']))

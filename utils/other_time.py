@@ -2,7 +2,7 @@ from datetime import datetime
 import pandas as pd
 
 
-def other_times(df, subject_id, ot_run, ot_df, time_column):
+def other_times(df, subject_id, ot_variables, ot_df, time_column):
     """Process work/other time data for a subject.
 
     Auto-detects file format (date_time or numeric) and validates all shift
@@ -12,7 +12,7 @@ def other_times(df, subject_id, ot_run, ot_df, time_column):
         (ot_index, ot_qc): ot_index maps shift numbers to [start_idx, end_idx],
         or (False, ot_qc) if no valid shifts, or (False, False) if disabled.
     """
-    if not ot_run:
+    if not ot_variables:
         return False, False
 
     ot_qc = {'SID': subject_id}
@@ -249,3 +249,69 @@ def fmt_dt(dt):
 def renumber_keys(d):
     """Renumber dict keys to sequential 1, 2, 3..."""
     return {i: d[k] for i, k in enumerate(sorted(d.keys()), start=1)}
+
+
+def get_between_ot(ot_index, epm, epd, data_len, min_shift_minutes=60):
+    """Build between-ot index ranges from the shift index.
+
+    Shifts <=min_shift_minutes are excluded as standalone shifts. The
+    between-ot section following each real shift extends to the start of
+    the next real shift, capped at 24 hours and at data_len. Short shifts
+    within between sections are carved out, resulting in multiple sub-ranges.
+
+    Consecutive real shifts with no gap between them are merged into one.
+
+    Returns (renumbered_shifts, between_dict) where between_dict maps
+    each shift key to a list of [start, end) ranges.
+    """
+    min_shift = min_shift_minutes * epm
+    real = {k: v for k, v in ot_index.items() if v[1] - v[0] > min_shift}
+    short = sorted([v for k, v in ot_index.items() if v[1] - v[0] <= min_shift], key=lambda x: x[0])
+
+    real_keys = sorted(real.keys())
+    renumbered = {i + 1: real[k] for i, k in enumerate(real_keys)}
+
+    # Merge consecutive shifts that are directly adjacent (no gap)
+    renumbered = merge_adjacent_shifts(renumbered)
+
+    between = {}
+    for i, key in enumerate(sorted(renumbered.keys())):
+        shift_end = renumbered[key][1]
+        if i + 1 < len(renumbered):
+            section_end = renumbered[sorted(renumbered.keys())[i + 1]][0]
+        else:
+            section_end = shift_end + epd
+        section_end = min(section_end, shift_end + epd, data_len)
+
+        ranges = []
+        pos = shift_end
+        for s_start, s_end in short:
+            if s_start >= section_end:
+                break
+            if s_end <= pos:
+                continue
+            if s_start > pos:
+                ranges.append([pos, s_start])
+            pos = s_end
+        if pos < section_end:
+            ranges.append([pos, section_end])
+
+        between[key] = ranges
+
+    return renumbered, between
+
+
+def merge_adjacent_shifts(shifts):
+    """Merge consecutive shifts that are directly adjacent (next starts where previous ends)."""
+    if len(shifts) <= 1:
+        return shifts
+    sorted_keys = sorted(shifts.keys())
+    merged = {1: list(shifts[sorted_keys[0]])}
+    current = 1
+    for k in sorted_keys[1:]:
+        if shifts[k][0] <= merged[current][1]:
+            merged[current][1] = max(merged[current][1], shifts[k][1])
+        else:
+            current += 1
+            merged[current] = list(shifts[k])
+    return merged

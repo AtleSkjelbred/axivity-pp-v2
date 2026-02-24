@@ -3,32 +3,60 @@
 from utils.transition import calculate_transitions
 from utils.activity import count_codes
 from utils.bout import count_bouts
+from utils.other_time import get_between_ot
 from datetime import datetime
 
 
-def calculate_variables(df, new_line, index, ot_index, date_info, ot_date_info, variables, epm, epd, settings):
-    """Compute all enabled summary statistics and write them into new_line."""
+def calculate_variables(df, subject_id, index, ot_index, date_info, ot_date_info, variables, epm, epd, settings):
+    """Compute all enabled summary statistics.
+
+    Returns a dict of separate result dicts for each output group:
+        {'base': dict, 'average': dict, 'daily': dict, 'ot': dict}
+    Only enabled groups are included.
+    """
     temp = {'ai': ['ai_codes', 'ai_column'], 'act': ['act_codes', 'act_column'], 'walk': ['walk_codes', 'walk_column']}
     chosen_var = {key: {'codes': settings[codes], 'column': settings[column]}
                   for key, (codes, column) in temp.items() if key in variables}
     code_name = settings['code_name']
     bout_codes = settings['bout_codes']
+    results = {}
 
-    wk_wknd = weekday_distribution(new_line, index, date_info, epm)
+    base_line = {'subject_id': subject_id}
+    wk_wknd = weekday_distribution(base_line, index, date_info, epm)
     if ot_index:
-        new_line[f'nr_ot'] = len(ot_index)
+        base_line['nr_ot'] = len(ot_index)
+    results['base'] = base_line
 
     if settings['average_variables']:
-        average_variables(new_line, variables, index, wk_wknd, epm, epd, code_name, chosen_var, bout_codes)
-    if settings['week_wknd_variables']:
-        wk_wknd_variables(new_line, variables, index, date_info, wk_wknd, epm, epd, code_name, chosen_var, bout_codes)
+        avg_line = {'subject_id': subject_id,
+                    'total_days': round(wk_wknd['total'], 2),
+                    'wk_days': round(wk_wknd['wk'], 2),
+                    'wknd_days': round(wk_wknd['wknd'], 2)}
+        average_variables(avg_line, variables, index, wk_wknd, epm, epd, code_name, chosen_var, bout_codes)
+        if settings['week_wknd_variables']:
+            wk_wknd_variables(avg_line, variables, index, date_info, wk_wknd, epm, epd, code_name, chosen_var, bout_codes)
+        results['average'] = avg_line
 
     if settings['daily_variables']:
-        daily_variables(new_line, variables, date_info, code_name, epd)
-    if settings['ot_variables']:
-        other_time_variables(new_line, df, ot_index, ot_date_info, code_name, chosen_var, bout_codes, settings, epm)
+        if settings['long_format']:
+            results['daily'] = daily_variables_long(subject_id, variables, date_info, code_name, epd)
+        else:
+            daily_line = {'subject_id': subject_id}
+            daily_variables(daily_line, variables, date_info, code_name, epd)
+            results['daily'] = daily_line
 
-    return
+    if settings['ot_variables']:
+        if settings['long_format']:
+            results['ot'] = other_time_variables_long(subject_id, df, ot_index, ot_date_info,
+                                                      code_name, chosen_var, bout_codes, settings, epm, epd)
+        else:
+            ot_line = {'subject_id': subject_id}
+            other_time_variables(ot_line, df, ot_index, ot_date_info, code_name, chosen_var, bout_codes, settings, epm)
+            if settings['between_ot_variables']:
+                between_time_variables(ot_line, df, ot_index, code_name, chosen_var, bout_codes, settings, epm, epd)
+            results['ot'] = ot_line
+
+    return results
 
 
 def weekday_distribution(new_line, index, date_info, epm) -> dict:
@@ -169,34 +197,267 @@ def daily_variables(new_line, var, date_info, code_name, epd):
 
 
 def other_time_variables(new_line, df, wrk_index, ot_date_info, code_name, chosen_var, bout_codes, settings, epm):
-    """Write per-shift datetime, activity, AIT, and bout variables."""
-    if wrk_index:
-        for shift, (start, end) in wrk_index.items():
-            length = end - start
-            time_col = settings['time_column']
-            start_datetime = datetime.strptime(df[time_col][start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-            if end in df.index:
-                end_datetime = datetime.strptime(df[time_col][end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-            else:
-                end_datetime = datetime.strptime(df[time_col][end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-            new_line[f'ot{shift}_nr'] = shift
-            new_line[f'ot{shift}_start_datetime'] = start_datetime
-            new_line[f'ot{shift}_end_datetime'] = end_datetime
-            new_line[f'ot{shift}_start_wkday_nr'] = ot_date_info[shift]['day_nr']
-            new_line[f'ot{shift}_start_wkday_str'] = ot_date_info[shift]['day_str']
-            new_line[f'ot{shift}_length'] = ot_date_info[shift]['length_epoch']
+    """Write per-shift datetime, activity, walking intensity, non-wear, AIT, and bout variables."""
+    if not wrk_index:
+        return
 
-            if settings['ait_variables']:
-                new_line[f'ot{shift}_ait'] = calculate_transitions(df, start, end, settings['ai_column'])
+    time_col = settings['time_column']
+    walk_codes = settings['walk_codes']
+    walk_column = settings['walk_column']
+    nw_column = settings['nw_column']
+    nw_codes = settings['nw_codes']
 
-            for key, dic in chosen_var.items():
-                for code in dic['codes']:
-                    count = count_codes(df, start, end, dic['column'], code)
-                    new_line[f'ot{shift}_{code_name[code]}_min'] = round(count / epm, 2)
-                    new_line[f'ot{shift}_{code_name[code]}_pct'] = round(count / length * 100, 3) if length > 0 else None
+    for shift, (start, end) in wrk_index.items():
+        epochs = end - start
+        prefix = f'ot{shift}'
 
-            if settings['bout_variables']:
+        start_datetime = datetime.strptime(df[time_col][start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        if end in df.index:
+            end_datetime = datetime.strptime(df[time_col][end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        else:
+            end_datetime = datetime.strptime(df[time_col][end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        new_line[f'{prefix}_nr'] = shift
+        new_line[f'{prefix}_start_datetime'] = start_datetime
+        new_line[f'{prefix}_end_datetime'] = end_datetime
+        new_line[f'{prefix}_start_wkday_nr'] = ot_date_info[shift]['day_nr']
+        new_line[f'{prefix}_start_wkday_str'] = ot_date_info[shift]['day_str']
+        new_line[f'{prefix}_epochs'] = epochs
+        new_line[f'{prefix}_min'] = epochs / epm
+
+        for key, dic in chosen_var.items():
+            for code in dic['codes']:
+                count = count_codes(df, start, end, dic['column'], code)
+                new_line[f'{prefix}_{code_name[code]}_min'] = round(count / epm, 2)
+                new_line[f'{prefix}_{code_name[code]}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
+
+        walk_total = sum(count_codes(df, start, end, walk_column, c) for c in walk_codes)
+        for code in walk_codes:
+            count = count_codes(df, start, end, walk_column, code)
+            new_line[f'{prefix}_walk{code_name[code]}_min'] = round(count / epm, 2)
+            new_line[f'{prefix}_walk{code_name[code]}_pct'] = round(count / walk_total * 100, 2) if walk_total > 0 else None
+
+        for code in nw_codes:
+            count = count_codes(df, start, end, nw_column, code)
+            new_line[f'{prefix}_nw_code_{code}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
+
+        if settings['ait_variables']:
+            new_line[f'{prefix}_ait'] = calculate_transitions(df, start, end, settings['ai_column'])
+
+        if settings['bout_variables']:
+            bouts = count_bouts(df, start, end, epm, settings)
+            for code in bout_codes:
+                for cat, val in enumerate(bouts[code]):
+                    new_line[f'{prefix}_{code_name[code]}_bout_c{cat + 1}'] = val
+
+
+def between_time_variables(new_line, df, wrk_index, code_name, chosen_var, bout_codes, settings, epm, epd):
+    """Write per-between-ot datetime, activity, walking, non-wear, AIT, and bout variables."""
+    if not wrk_index:
+        return
+
+    _, between_index = get_between_ot(wrk_index, epm, epd, len(df),
+                                          settings.get('min_shift_minutes', 60))
+
+    time_col = settings['time_column']
+    walk_codes = settings['walk_codes']
+    walk_column = settings['walk_column']
+    nw_column = settings['nw_column']
+    nw_codes = settings['nw_codes']
+
+    for key in sorted(between_index.keys()):
+        ranges = between_index[key]
+        if not ranges:
+            continue
+
+        b_start = ranges[0][0]
+        b_end = ranges[-1][1]
+        epochs = sum(end - start for start, end in ranges)
+        prefix = f'between{key}'
+
+        new_line[f'{prefix}_nr'] = key
+        new_line[f'{prefix}_start_datetime'] = datetime.strptime(
+            df[time_col][b_start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        if b_end in df.index:
+            new_line[f'{prefix}_end_datetime'] = datetime.strptime(
+                df[time_col][b_end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        else:
+            new_line[f'{prefix}_end_datetime'] = datetime.strptime(
+                df[time_col][b_end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        new_line[f'{prefix}_start_wkday_nr'] = datetime.strptime(
+            df[time_col][b_start][:10], "%Y-%m-%d").weekday() + 1
+        new_line[f'{prefix}_start_wkday_str'] = datetime.strptime(
+            df[time_col][b_start][:10], "%Y-%m-%d").strftime('%A')
+        new_line[f'{prefix}_epochs'] = epochs
+        new_line[f'{prefix}_min'] = epochs / epm
+
+        for key2, dic in chosen_var.items():
+            for code in dic['codes']:
+                count = sum(count_codes(df, start, end, dic['column'], code)
+                            for start, end in ranges)
+                new_line[f'{prefix}_{code_name[code]}_min'] = round(count / epm, 2)
+                new_line[f'{prefix}_{code_name[code]}_pct'] = round(
+                    count / epochs * 100, 2) if epochs > 0 else None
+
+        walk_total = sum(count_codes(df, start, end, walk_column, c)
+                         for start, end in ranges for c in walk_codes)
+        for code in walk_codes:
+            count = sum(count_codes(df, start, end, walk_column, code)
+                        for start, end in ranges)
+            new_line[f'{prefix}_walk{code_name[code]}_min'] = round(count / epm, 2)
+            new_line[f'{prefix}_walk{code_name[code]}_pct'] = round(
+                count / walk_total * 100, 2) if walk_total > 0 else None
+
+        for code in nw_codes:
+            count = sum(count_codes(df, start, end, nw_column, code)
+                        for start, end in ranges)
+            new_line[f'{prefix}_nw_code_{code}_pct'] = round(
+                count / epochs * 100, 2) if epochs > 0 else None
+
+        if settings['ait_variables']:
+            new_line[f'{prefix}_ait'] = sum(
+                calculate_transitions(df, start, end, settings['ai_column'])
+                for start, end in ranges)
+
+        if settings['bout_variables']:
+            combined_bouts = {}
+            for start, end in ranges:
                 bouts = count_bouts(df, start, end, epm, settings)
                 for code in bout_codes:
-                    for cat, val in enumerate(bouts[code]):
-                        new_line[f'ot{shift}_{code_name[code]}_bout_c{cat + 1}'] = val
+                    if code not in combined_bouts:
+                        combined_bouts[code] = [0] * len(bouts[code])
+                    combined_bouts[code] = [a + b for a, b in
+                                            zip(combined_bouts[code], bouts[code])]
+            for code in bout_codes:
+                for cat, val in enumerate(combined_bouts.get(code, [])):
+                    new_line[f'{prefix}_{code_name[code]}_bout_c{cat + 1}'] = val
+
+
+def daily_variables_long(subject_id, var, date_info, code_name, epd):
+    """Build long-format daily rows: one dict per day."""
+    rows = []
+    for day, info in date_info.items():
+        row = {'subject_id': subject_id,
+               'day_nr': day,
+               'date': info['date'],
+               'wkday_nr': info['day_nr'],
+               'wkday_str': info['day_str'],
+               'length_min': info['length_epoch'],
+               'length_pct': round(info['length_epoch'] / epd * 100, 2) if epd > 0 else None}
+
+        if 'nw' in var:
+            for key, value in var['nw'][day].items():
+                row[f'nw_code_{key}'] = value
+
+        for var_type in ['ai', 'act', 'walk']:
+            if var_type in var:
+                for code, values in var[var_type][day].items():
+                    row[f'total_{code_name[code]}'] = values['total']
+                    if 'normal' in values:
+                        row[f'normal_{code_name[code]}'] = values['normal']
+                        row[f'other_{code_name[code]}'] = values['ot']
+
+        if 'ait' in var:
+            row['total_ait'] = var['ait'][day]['total']
+            if 'normal' in var['ait'][day]:
+                row['normal_ait'] = var['ait'][day]['normal']
+                row['other_ait'] = var['ait'][day]['ot']
+
+        if 'bout' in var:
+            for key in ['total', 'normal', 'other']:
+                if key in var['bout'][day]:
+                    for code, values in var['bout'][day][key].items():
+                        for nr, val in enumerate(values):
+                            row[f'{code_name[code]}_{key}_bouts_c{nr + 1}'] = val
+
+        rows.append(row)
+    return rows
+
+
+def other_time_variables_long(subject_id, df, wrk_index, ot_date_info, code_name,
+                              chosen_var, bout_codes, settings, epm, epd):
+    """Build long-format OT rows: one dict per shift and per between-ot section."""
+    rows = []
+    if not wrk_index:
+        return rows
+
+    time_col = settings['time_column']
+    walk_codes = settings['walk_codes']
+    walk_column = settings['walk_column']
+    nw_column = settings['nw_column']
+    nw_codes = settings['nw_codes']
+
+    for shift, (start, end) in wrk_index.items():
+        row = _build_ot_row(subject_id, 'ot', shift, df, start, end, [(start, end)],
+                            ot_date_info[shift]['day_nr'], ot_date_info[shift]['day_str'],
+                            time_col, code_name, chosen_var, walk_codes, walk_column,
+                            nw_column, nw_codes, bout_codes, settings, epm)
+        rows.append(row)
+
+    if settings['between_ot_variables']:
+        _, between_index = get_between_ot(wrk_index, epm, epd, len(df),
+                                          settings.get('min_shift_minutes', 60))
+        for key in sorted(between_index.keys()):
+            ranges = between_index[key]
+            if not ranges:
+                continue
+            b_start = ranges[0][0]
+            wkday_nr = datetime.strptime(df[time_col][b_start][:10], "%Y-%m-%d").weekday() + 1
+            wkday_str = datetime.strptime(df[time_col][b_start][:10], "%Y-%m-%d").strftime('%A')
+            row = _build_ot_row(subject_id, 'between', key, df, ranges[0][0], ranges[-1][1],
+                                ranges, wkday_nr, wkday_str, time_col, code_name, chosen_var,
+                                walk_codes, walk_column, nw_column, nw_codes, bout_codes,
+                                settings, epm)
+            rows.append(row)
+
+    return rows
+
+
+def _build_ot_row(subject_id, row_type, nr, df, start_idx, end_idx, ranges,
+                  wkday_nr, wkday_str, time_col, code_name, chosen_var,
+                  walk_codes, walk_column, nw_column, nw_codes, bout_codes, settings, epm):
+    """Build a single long-format row for an OT shift or between-ot section."""
+    epochs = sum(end - start for start, end in ranges)
+
+    start_datetime = datetime.strptime(df[time_col][start_idx][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+    if end_idx in df.index:
+        end_datetime = datetime.strptime(df[time_col][end_idx][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+    else:
+        end_datetime = datetime.strptime(df[time_col][end_idx - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+
+    row = {'subject_id': subject_id, 'type': row_type, 'nr': nr,
+           'start_datetime': start_datetime, 'end_datetime': end_datetime,
+           'start_wkday_nr': wkday_nr, 'start_wkday_str': wkday_str,
+           'epochs': epochs, 'min': epochs / epm}
+
+    for key, dic in chosen_var.items():
+        for code in dic['codes']:
+            count = sum(count_codes(df, s, e, dic['column'], code) for s, e in ranges)
+            row[f'{code_name[code]}_min'] = round(count / epm, 2)
+            row[f'{code_name[code]}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
+
+    walk_total = sum(count_codes(df, s, e, walk_column, c) for s, e in ranges for c in walk_codes)
+    for code in walk_codes:
+        count = sum(count_codes(df, s, e, walk_column, code) for s, e in ranges)
+        row[f'walk{code_name[code]}_min'] = round(count / epm, 2)
+        row[f'walk{code_name[code]}_pct'] = round(count / walk_total * 100, 2) if walk_total > 0 else None
+
+    for code in nw_codes:
+        count = sum(count_codes(df, s, e, nw_column, code) for s, e in ranges)
+        row[f'nw_code_{code}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
+
+    if settings['ait_variables']:
+        row['ait'] = sum(calculate_transitions(df, s, e, settings['ai_column']) for s, e in ranges)
+
+    if settings['bout_variables']:
+        combined_bouts = {}
+        for s, e in ranges:
+            bouts = count_bouts(df, s, e, epm, settings)
+            for code in bout_codes:
+                if code not in combined_bouts:
+                    combined_bouts[code] = [0] * len(bouts[code])
+                combined_bouts[code] = [a + b for a, b in zip(combined_bouts[code], bouts[code])]
+        for code in bout_codes:
+            for cat, val in enumerate(combined_bouts.get(code, [])):
+                row[f'{code_name[code]}_bout_c{cat + 1}'] = val
+
+    return row

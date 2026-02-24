@@ -2,12 +2,7 @@
 
 Post-processing pipeline for epoch-level accelerometer data exported from Axivity sensors. For each subject it filters the data, segments it into days, optionally maps work shifts, and computes a wide range of activity variables.
 
-There are two entry points:
-
-- **`main.py`** — Full pipeline: end trimming, activity recoding, day segmentation, day quality filters, work-shift mapping, and variable calculation (daily, average, weekday/weekend, work/normal splits).
-- **`main_ot.py`** — Standalone work-shift pipeline: processes the same input files but outputs per-shift and between-shift activity variables only.
-
-Both scripts read configuration from `config.yaml` in the working directory. Results are written to `./results/`.
+Configuration is read from `config.yaml` in the working directory. Results are written to `./results/` as separate CSV files, each controlled by config toggles.
 
 ## Getting Started
 
@@ -71,7 +66,7 @@ Column names are configurable in `config.yaml`.
 
 ### Work-times file
 
-If work-shift analysis is enabled (`ot_run: True`), a separate CSV file with shift start/end times is required. Set the path in `config.yaml` under `ot_path`. The file format is auto-detected (date-time columns or numeric indices).
+If work-shift analysis is enabled (`ot_variables: True`), a separate CSV file with shift start/end times is required. Set the path in `config.yaml` under `ot_path`. The file format is auto-detected (date-time columns or numeric indices).
 
 ## Usage
 
@@ -80,32 +75,26 @@ Activate the environment first:
 conda activate axivity
 ```
 
-### Full pipeline
-
 ```
 python main.py [--data-folder PATH]
 ```
 
 If `--data-folder` is omitted, defaults to `./data/`.
 
-### Work-shift only pipeline
-
-```
-python main_ot.py [--data-folder PATH]
-```
-
 ### Output
 
-Results are saved to `./results/` with a timestamp in the filename:
+Each run creates a timestamped subfolder under `./results/` containing the output files:
 
-| File | Description |
-|------|-------------|
-| `post process data <timestamp>.csv` | Main output from `main.py` — all computed variables per subject |
-| `other time qc <timestamp>.csv` | QC report for work-shift matching from `main.py` |
-| `ot shift data <timestamp>.csv` | Per-shift output from `main_ot.py` |
-| `ot shift qc <timestamp>.csv` | QC report from `main_ot.py` |
-| `error_log <timestamp>.csv` | Files that failed processing (missing columns, bad timestamps, etc.) |
-| `barcode/` | Activity barcode plots (only if `barcode_run: True`) |
+| File | Config toggle | Description |
+|------|--------------|-------------|
+| `post process data.csv` | `base_variables` | Subject metadata, epoch info, recording dates, non-wear totals |
+| `average data.csv` | `average_variables` | Per-day averages (includes weekday/weekend if `week_wknd_variables` is True) |
+| `daily data.csv` | `daily_variables` | Per-day breakdown of all enabled variables |
+| `ot data.csv` | `ot_variables` | Per-shift variables (includes between-ot if `between_ot_variables` is True) |
+| `other time qc.csv` | `ot_variables` | QC report for work-shift matching |
+| `config.yaml` | `save_config` | Snapshot of the config used for the run |
+| `error_log.csv` | When errors occur | Files that failed processing |
+| `barcode/` | `barcode_run` | Activity barcode plots |
 
 ## Configuration
 
@@ -114,16 +103,6 @@ All settings are in `config.yaml`. The file is commented — see it for full det
 ### Column names
 
 Map the column names in your input CSVs to what the pipeline expects. Change these if your files use different headers.
-
-### Work-shift settings
-
-| Setting | Description |
-|---------|-------------|
-| `ot_run` | Enable/disable work-shift analysis in `main.py` |
-| `ot_path` | Path to the work-times CSV file |
-| `ot_delimiter` | Delimiter of the work-times CSV (e.g. `;`) |
-| `min_shift_minutes` | Shifts shorter than this (in minutes) are excluded as standalone shifts and do not interrupt between-shift sections. Default: 60 |
-| `barcode_run` | Generate barcode activity plots |
 
 ### End trimming
 
@@ -139,13 +118,13 @@ Entire days are removed if they are dominated by non-wear or a single posture:
 
 - `nw_days` / `bug_days` — enable day-level filtering
 - `nw_days_pct` / `bug_days_pct` — fraction thresholds
-- `bug_lying`, `bug_sitting`, `bug_standing` — which postures to check
+- `bug_lying`, `bug_sitting`, `bug_standing` — which postures to check (requires `bug_days`)
 - `min_days` — minimum valid days required to produce output for a subject
 - `remove_partial_days` — optionally remove days shorter than 24 hours
 
 ### Activity code remapping
 
-Before analysis, activity codes can be simplified:
+Before analysis, activity codes can be simplified. Built-in remappings are applied first, followed by any custom `code_remap` entries:
 
 | Setting | Effect |
 |---------|--------|
@@ -154,23 +133,49 @@ Before analysis, activity codes can be simplified:
 | `remove_shuffling` | Remap shuffling to walking (if between walks) or standing |
 | `merge_cyc_codes` | Merge all cycling variants into a single cycling code |
 | `adjust_cyc_interval` | Replace short cycling bouts (<=`min_cyc_epochs`) with surrounding activity |
+| `code_remap` | Custom code-to-code remapping using names from the `codes` block (applied after built-in remappings) |
 
-### Output variable groups
+### Variable calculation
 
-Toggle which categories of variables are included in the output:
+Toggle which categories of variables are calculated:
 
 | Setting | Variables |
 |---------|-----------|
 | `act_variables` | Activity counts and percentages per activity code |
-| `ai_variables` | Active/inactive time |
-| `walk_variables` | Walking intensity counts |
+| `ai_variables` | Active/inactive time counts and percentages |
+| `walk_variables` | Walking intensity counts and percentages |
 | `ait_variables` | Active-inactive transition counts |
 | `bout_variables` | Bout counts per duration category |
 | `nw_variables` | Non-wear percentages |
-| `daily_variables` | Per-day breakdown |
-| `average_variables` | Averages across all valid days |
-| `week_wknd_variables` | Separate weekday/weekend averages |
-| `ot_variables` | Work-shift vs non-work-shift breakdown |
+
+### Output files
+
+Toggle which CSV files are written to results/:
+
+| Setting | Output | Requires |
+|---------|--------|----------|
+| `base_variables` | Subject metadata and recording info | — |
+| `daily_variables` | Per-day breakdown | — |
+| `average_variables` | Averages across all valid days | — |
+| `week_wknd_variables` | Weekday/weekend averages (in average file) | `average_variables` |
+| `ot_variables` | Work-shift breakdown + QC | valid `ot_path` |
+| `between_ot_variables` | Between-ot breakdown (in ot file) | `ot_variables` |
+| `save_config` | Config snapshot | — |
+
+Output formatting:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `long_format` | `False` | Output daily and OT data in long format (one row per day/shift) instead of wide format (one row per subject) |
+| `na_rep` | `''` | Representation for missing data in output CSVs (e.g. `''`, `'.'`, `'NA'`) |
+
+### Work-shift settings
+
+| Setting | Description |
+|---------|-------------|
+| `ot_path` | Path to the work-times CSV file |
+| `ot_delimiter` | Delimiter of the work-times CSV (e.g. `;`) |
+| `min_shift_minutes` | Shifts shorter than this are excluded as standalone shifts and do not interrupt between-ot sections. Default: 60 |
 
 ### Bout duration categories
 
@@ -188,15 +193,17 @@ Bouts are classified into duration bins defined in seconds (`i_cat` for inactive
 
 The `codes` section maps activity names to the numeric codes used by the classifier. The `code_name` section maps codes to human-readable names used as column suffixes in the output.
 
+Code lists such as `act_codes`, `stair_codes`, and `cyc_codes` are derived automatically from the `codes` block at runtime. `bout_codes` references code names from the `codes` block and is resolved at runtime.
+
 ## Processing Steps
 
 1. **Epoch detection** — The epoch rate is auto-detected from the first two timestamps.
 2. **End trimming** — Non-wear and buggy posture epochs are trimmed from recording start/end.
-3. **Activity recoding** — Stairs, bending, shuffling, and cycling codes are remapped. An active/inactive (AI) column is derived (sitting and lying = Inactive, everything else = Active).
+3. **Activity recoding** — Built-in remappings (stairs, bending, shuffling, cycling) are applied, followed by custom `code_remap` entries. An active/inactive (AI) column is derived (sitting and lying = Inactive, everything else = Active).
 4. **Day segmentation** — The recording is split into days at midnight boundaries.
 5. **Day filtering** — Days failing quality checks are removed; remaining days are renumbered 1..N.
-6. **Work-shift mapping** — Shift times are matched to accelerometer epochs; a QC report flags any issues.
-7. **Variable calculation** — Epoch counts, percentages, transitions, and bouts are computed at daily, average, weekday/weekend, and work/normal aggregation levels.
+6. **Work-shift mapping** — If `ot_variables` is enabled, shift times are matched to accelerometer epochs; a QC report flags any issues.
+7. **Variable calculation** — Epoch counts, percentages, transitions, and bouts are computed at daily, average, weekday/weekend, and work/normal aggregation levels. Results are written to separate CSV files based on config toggles.
 
 ## Output Variables
 
@@ -207,8 +214,7 @@ See [variables.md](variables.md) for full documentation of every output column, 
 ```
 axivity-pp-v2/
     config.yaml          Configuration file
-    main.py              Full analysis pipeline
-    main_ot.py           Work-shift only pipeline
+    main.py              Analysis pipeline
     variables.md         Output variable documentation
     data/                Input CSV files (default location)
     results/             Output files
@@ -217,7 +223,7 @@ axivity-pp-v2/
         bout.py          Bout detection with noise tolerance
         transition.py    Active-inactive transition (AIT) counting
         df_filter.py     End trimming, activity recoding, day quality filters
-        other_time.py    Work-shift time parsing and epoch mapping
-        calc_var.py      Averages, weekday/weekend, daily, and OT summaries
+        other_time.py    Work-shift time parsing, epoch mapping, between-ot logic
+        calc_var.py      Averages, weekday/weekend, daily, OT, and between-OT summaries
         barcode.py       Barcode-style activity visualisation plots
 ```

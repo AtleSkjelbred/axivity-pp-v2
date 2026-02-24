@@ -11,8 +11,12 @@ Processes CSV files exported from Axivity sensors through a series of steps:
   4. Variable calculation: computes per-day, per-shift, average, and
      weekday/weekend summary statistics for activity counts, active/inactive
      time, activity intensity transitions (AIT), and bout counts.
-  5. Output: writes two CSVs to results/ — the main post-process data and a
-     QC report for the work-shift matching.
+  5. Output: writes separate CSVs to results/, each controlled by config toggles:
+     - post process data: always (base subject metadata)
+     - average data: when average_variables is True (includes weekday/weekend)
+     - daily data: when daily_variables is True
+     - ot data: when ot_variables is True (shifts + between-ot sections)
+     - other time qc: when ot_variables is True
 
 Usage:
     python main.py [--data-folder PATH]
@@ -42,76 +46,122 @@ from utils.barcode import gen_plot, plotter
 
 def main(data_folder, settings):
     """Batch-process all CSV files in data_folder and write results."""
-    results = []
+    base_results = []
+    avg_results = []
+    daily_results = []
+    ot_results = []
     qc_results = []
     error_log = []
     base_path = os.getcwd()
-    results_path = os.path.join(base_path, 'results')
+    timestamp = datetime.now().strftime("%d.%m.%Y %H.%M")
+    run_path = os.path.join(base_path, 'results', timestamp)
+    os.makedirs(run_path, exist_ok=True)
 
-    if settings['ot_run']:
+    if settings['ot_variables']:
         ot_df = get_ot_df(settings['ot_path'], settings['ot_delimiter'])
     else:
         ot_df = False
 
     if settings['barcode_run']:
-        barcode_path = os.path.join(base_path, 'barcode')
-        if not os.path.exists(barcode_path):
-            os.makedirs(barcode_path)
+        barcode_path = os.path.join(run_path, 'barcode')
+        os.makedirs(barcode_path, exist_ok=True)
 
     for csvfile in glob.glob(os.path.join(data_folder, '*.csv')):
         df = pd.read_csv(csvfile)
         if settings['id_column'] not in df.columns:
             error_log.append({'file': csvfile, 'error': f"Missing id column '{settings['id_column']}'"})
             continue
-        new_line = {'subject_id': df[settings['id_column']][0]}
-        subject_id = new_line['subject_id']
+        subject_id = df[settings['id_column']][0]
         print(f'--- Processing file: {subject_id} ---')
 
-        epm, epd = epoch_test(new_line, df, settings['time_column'])
+        epm, epd = epoch_test(df, settings['time_column'])
         if epm is None:
             error_log.append({'file': csvfile, 'subject_id': subject_id, 'error': epd})
             continue
 
-        df = filter_dataframe(new_line, df, epm, settings)
+        total_epochs = len(df)
+        timestamps = pd.to_datetime(df[settings['time_column']])
+        recording_start = timestamps.iloc[0].strftime("%d.%m.%Y %H:%M")
+        recording_end = timestamps.iloc[-1].strftime("%d.%m.%Y %H:%M")
+
+        filter_info = {}
+        df = filter_dataframe(filter_info, df, epm, settings)
 
         index = get_index(df, settings['time_column'])
+        total_days = len(index)
         filter_days(df, index, settings, epd)
+        days_removed = total_days - len(index)
         # Keys must be contiguous (1..N) before get_variables/get_date_info,
         # because get_wrk_act/get_wrk_bouts/get_wrk_ait use day - 1 lookups.
         index = shift_index_keys(index)
-        ot_index, ot_qc = other_times(df, new_line['subject_id'], settings['ot_run'], ot_df, settings['time_column'])
+        ot_index, ot_qc = other_times(df, subject_id, settings['ot_variables'], ot_df, settings['time_column'])
         date_info = get_date_info(df, index, settings['time_column'])
         ot_date_info = get_date_info(df, ot_index, settings['time_column'])
 
+        base_line = {'subject_id': subject_id, 'epoch_per_min': epm, 'epoch_per_day': epd,
+                     'total_epochs': total_epochs,
+                     'recording_start': recording_start, 'recording_end': recording_end,
+                     'epochs_removed': filter_info.get('epochs_removed', 0),
+                     'total_days_before_filter': total_days, 'days_removed': days_removed}
+
         if index and len(index) >= settings['min_days']:
-            variables = get_variables(new_line, epm, df, index, date_info, ot_index, ot_date_info, settings)
-            calculate_variables(df, new_line, index, ot_index, date_info, ot_date_info, variables, epm, epd, settings)
+            variables, nw_total = get_variables(epm, df, index, date_info, ot_index, ot_date_info, settings)
+            for code, value in nw_total.items():
+                base_line[f'total_nw_code_{code}'] = value
+            var_results = calculate_variables(df, subject_id, index, ot_index, date_info,
+                                             ot_date_info, variables, epm, epd, settings)
+            base_line.update(var_results['base'])
+            if 'average' in var_results:
+                avg_results.append(var_results['average'])
+            if 'daily' in var_results:
+                if settings['long_format']:
+                    daily_results.extend(var_results['daily'])
+                else:
+                    daily_results.append(var_results['daily'])
+            if 'ot' in var_results:
+                if settings['long_format']:
+                    ot_results.extend(var_results['ot'])
+                else:
+                    ot_results.append(var_results['ot'])
 
         if ot_qc:
             qc_results.append(ot_qc)
-        results.append(new_line)
+        base_results.append(base_line)
 
         if settings['barcode_run']:
             if index and len(index) >= settings['min_days']:
                 plot, ot_plot = gen_plot(df, index, ot_index, epd, settings)
-                plotter(plot, ot_plot, date_info, new_line['subject_id'], base_path, settings)
+                plotter(plot, ot_plot, date_info, subject_id, run_path, settings)
 
-    if not os.path.exists(results_path):
-        os.makedirs(results_path)
+    na_rep = settings.get('na_rep', '')
 
-    timestamp = datetime.now().strftime("%d.%m.%Y %H.%M")
-    outgoing_qc = pd.DataFrame(qc_results) if qc_results else pd.DataFrame()
-    outgoing_df = pd.DataFrame(results) if results else pd.DataFrame()
-    outgoing_qc.to_csv(os.path.join(results_path, f'other time qc {timestamp}.csv'), index=False)
-    outgoing_df.to_csv(os.path.join(results_path, f'post process data {timestamp}.csv'), index=False)
+    if settings['base_variables'] and base_results:
+        pd.DataFrame(base_results).to_csv(
+            os.path.join(run_path, 'post process data.csv'), index=False, na_rep=na_rep)
+
+    if settings['average_variables'] and avg_results:
+        pd.DataFrame(avg_results).to_csv(
+            os.path.join(run_path, 'average data.csv'), index=False, na_rep=na_rep)
+
+    if settings['daily_variables'] and daily_results:
+        pd.DataFrame(daily_results).to_csv(
+            os.path.join(run_path, 'daily data.csv'), index=False, na_rep=na_rep)
+
+    if settings['ot_variables'] and ot_results:
+        pd.DataFrame(ot_results).to_csv(
+            os.path.join(run_path, 'ot data.csv'), index=False, na_rep=na_rep)
+
+    if qc_results:
+        pd.DataFrame(qc_results).to_csv(
+            os.path.join(run_path, 'other time qc.csv'), index=False, na_rep=na_rep)
 
     if settings.get('save_config', False):
-        with open(os.path.join(results_path, f'config {timestamp}.yaml'), 'w') as f:
+        with open(os.path.join(run_path, 'config.yaml'), 'w') as f:
             yaml.dump(settings, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
     if error_log:
         error_df = pd.DataFrame(error_log)
-        error_df.to_csv(os.path.join(results_path, f'error_log {timestamp}.csv'), index=False)
+        error_df.to_csv(os.path.join(run_path, 'error_log.csv'), index=False, na_rep=na_rep)
         print(f'----- {len(error_log)} file(s) skipped due to errors. See error_log in results/ -----')
 
     end_time = time.time()
@@ -124,34 +174,38 @@ def get_ot_df(ot_path, delim):
     return ot_df
 
 
-def get_variables(new_line, epm, df, index, date_info, ot_index, ot_date_info, settings) -> dict:
-    """Collect per-day activity, AIT, and bout data for each enabled variable group."""
+def get_variables(epm, df, index, date_info, ot_index, ot_date_info, settings) -> tuple[dict, dict]:
+    """Collect per-day activity, AIT, and bout data for each enabled variable group.
+
+    Returns (variables, nw_total) where nw_total maps codes to overall nw percentages.
+    """
     variables = {}
+    nw_total = {}
     if settings['nw_variables']:
-        variables['nw'] = non_wear_pct(new_line, df, index, settings)
+        nw_total, nw_daily = non_wear_pct(df, index, settings)
+        variables['nw'] = nw_daily
     if settings['ai_variables']:
         variables['ai'] = get_activities(df, index, date_info, ot_index, ot_date_info,
-                                         settings['ot_run'], settings['ai_codes'], settings['ai_column'])
+                                         settings['ot_variables'], settings['ai_codes'], settings['ai_column'])
     if settings['act_variables']:
         variables['act'] = get_activities(df, index, date_info, ot_index, ot_date_info,
-                                          settings['ot_run'], settings['act_codes'],
+                                          settings['ot_variables'], settings['act_codes'],
                                           settings['act_column'])
     if settings['walk_variables']:
         variables['walk'] = get_activities(df, index, date_info, ot_index, ot_date_info,
-                                           settings['ot_run'], settings['walk_codes'],
+                                           settings['ot_variables'], settings['walk_codes'],
                                            settings['walk_column'])
     if settings['ait_variables']:
-        variables['ait'] = get_ait(df, index, date_info, ot_index, ot_date_info, settings['ot_run'], settings['ai_column'])
+        variables['ait'] = get_ait(df, index, date_info, ot_index, ot_date_info, settings['ot_variables'], settings['ai_column'])
     if settings['bout_variables']:
         variables['bout'] = get_bouts(df, index, date_info, ot_index, ot_date_info, epm, settings)
-    return variables
+    return variables, nw_total
 
 
-def epoch_test(new_line: dict, df: pd.DataFrame, time_column: str) -> tuple[int, int]:
+def epoch_test(df: pd.DataFrame, time_column: str) -> tuple[int, int]:
     """Detect epoch length from the first two timestamps.
 
     Returns (epm, epd) on success, or (None, error_message) on failure.
-    Also writes epoch info into new_line.
     """
     if len(df) < 2:
         return None, f"Dataset too small for epoch detection ({len(df)} rows)"
@@ -167,9 +221,6 @@ def epoch_test(new_line: dict, df: pd.DataFrame, time_column: str) -> tuple[int,
 
     epm = int(60 / epoch_seconds)
     epd = epm * 60 * 24
-
-    new_line.update({'epoch per min': epm,
-                     'epoch per day': epd})
     return epm, epd
 
 
@@ -211,8 +262,12 @@ def get_date_info(df, index, time_column):
     return info
 
 
-def non_wear_pct(new_line, df, ind, settings) -> dict:
-    """Calculate non-wear percentage totals and per-day breakdowns."""
+def non_wear_pct(df, ind, settings) -> tuple[dict, dict]:
+    """Calculate non-wear percentage totals and per-day breakdowns.
+
+    Returns (total_dict, daily_dict) where total_dict maps codes to overall
+    percentages and daily_dict maps days to per-code percentages.
+    """
     temp = {day: {code: (df[settings['nw_column']][start: end].values == code).sum() for code in settings['nw_codes']}
             for day, (start, end) in ind.items()}
 
@@ -226,22 +281,30 @@ def non_wear_pct(new_line, df, ind, settings) -> dict:
         daily[day] = {code: round(temp[day][code] / day_length * 100, 2)
                       if day_length > 0 else 0.0 for code in settings['nw_codes']}
 
-    for key, value in total.items():
-        new_line[f'total_nw_code_{key}'] = value
-    return daily
+    return total, daily
 
 
 def manage_config(config):
     """Derive runtime code lists (act_codes, walk_codes, ai) from base config."""
-    config['act_codes'] = list(config['act_codes_base'])
+    codes = config['codes']
+
+    config['stair_codes'] = [codes['stairs_ascend'], codes['stairs_descend']]
+    config['cyc_codes'] = [codes['cycling_stand'], codes['cyc_sit_inactive'], codes['cyc_stand_inactive']]
+
+    config['act_codes'] = [codes['walking'], codes['running'], codes['standing'],
+                           codes['sitting'], codes['lying'], codes['cycling']]
     if not config['merge_cyc_codes']:
         config['act_codes'].extend(config['cyc_codes'])
     if not config['remove_stairs']:
         config['act_codes'].extend(config['stair_codes'])
 
+    config['bout_codes'] = [codes[name] for name in config['bout_codes']]
+
     config['walk_codes'] = list(config['walk_codes_base'])
     if config['remove_stairs']:
         config['walk_codes'].append(config['stair_walk_code'])
+
+    config['code_remap'] = {codes[src]: codes[tgt] for src, tgt in config['code_remap'].items()}
 
     config['ai_column'] = 'ai_column'
     config['ai_codes'] = ['A', 'I']

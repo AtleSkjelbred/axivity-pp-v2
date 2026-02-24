@@ -12,13 +12,13 @@ def calculate_transitions(df, start, end, ai_column):
     return len(active_groups)
 
 
-def get_ait(df, index, date_info, ot_index, ot_date_info, run_ot, ai_column):
+def get_ait(df, index, date_info, ot_index, ot_date_info, ot_variables, ai_column):
     """Calculate AIT per day, with optional work/normal split."""
     ait = {}
 
     for day, value in index.items():
         ait[day] = {'total': calculate_transitions(df, value[0], value[1], ai_column)}
-        if run_ot and ot_index:
+        if ot_variables and ot_index:
             ait[day]['ot'] = get_wrk_ait(df, index, date_info, ot_index, ot_date_info, day, ai_column)
             ait[day]['normal'] = ait[day]['total'] - ait[day]['ot']
     return ait

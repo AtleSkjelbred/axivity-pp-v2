@@ -9,7 +9,7 @@ def get_bouts(df, index, date_info, wrk_index, wrk_date_info, epm, settings):
     for day, (start, end) in index.items():
         temp[day] = {}
         temp[day]['total'] = count_bouts(df, start, end, epm, settings)
-        if settings['ot_run'] and wrk_index:
+        if settings['ot_variables'] and wrk_index:
             temp[day]['other'] = get_wrk_bouts(df, index, date_info, wrk_index, wrk_date_info, day, epm, settings)
             temp[day]['normal'] = {key: [a - b for a, b in zip(temp[day]['total'][key], temp[day]['other'][key])]
                                    for key in temp[day]['total']}

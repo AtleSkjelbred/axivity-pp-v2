@@ -1,10 +1,9 @@
 # =============================================================================
 # Axivity Post-Processing Configuration
 #
-# Used by main.py (full pipeline) and main_ot.py (shift-only pipeline).
+# Used by main.py to process accelerometer data.
 # Place CSV data files in ./data/ and run:
 #   python main.py            -- full analysis
-#   python main_ot.py         -- work-shift analysis only
 # Results are written to ./results/
 # =============================================================================
 
@@ -15,15 +14,6 @@ time_column: 'timestamp'                        # Timestamp column
 act_column: 'label'                             # Activity prediction column (numeric codes)
 walk_column: 'walking_intensity_prediction'     # Walking intensity prediction column
 nw_column: 'snt_prediction'                     # Non-wear (sensor) prediction column
-
-
-# --- Work-shift (other time) settings ---
-# Used by both main.py and main_ot.py to match accelerometer data with work shifts.
-barcode_run: False                              # Generate barcode activity plots
-ot_run: True                                    # Enable work-shift analysis in main.py
-ot_path: 'C:/Users/skjel/axivity-pp-v2/Arbeidstid og NASA TLX T1 (vasket).csv'  # Path to the work-times CSV file
-ot_delimiter: ';'                               # Delimiter used in the work-times CSV
-min_shift_minutes: 60                           # Shifts shorter than this (in minutes) are excluded as standalone shifts and do not interrupt between-shift sections
 
 
 # --- End trimming ---
@@ -47,6 +37,7 @@ bug_sitting: True           # Check for excessive sitting when bug_days is True
 bug_standing: True          # Check for excessive standing when bug_days is True
 nw_days_pct: 0.5            # Max fraction of non-wear before a day is removed
 bug_days_pct: 0.8           # Max fraction of a single posture before a day is removed
+remove_partial_days: False  # Remove days shorter than 24 hours
 min_days: 1                 # Minimum valid days required to produce output for a subject
 
 
@@ -58,11 +49,23 @@ remove_shuffling: True      # Remap shuffling to walking (if between walks) or s
 merge_cyc_codes: True       # Merge all cycling variants into a single cycling code
 adjust_cyc_interval: True   # Replace short cycling bouts with the surrounding activity
 min_cyc_epochs: 3           # Max length (in epochs) of a cycling bout to be replaced
-remove_partial_days: False  # Remove days shorter than 24 hours
+
+# Custom code remapping (applied after built-in remappings above).
+# Maps source → target using names from the codes block.
+# Both source and target must be defined in the codes block below.
+# Example: {running: walking, jumping: standing}
+code_remap: {}
 
 
-# --- Output variable groups ---
-# Toggle which variable categories are calculated and included in output.
+# --- Work-shift (other time) settings ---
+# Match accelerometer data with work shifts from a separate CSV file.
+ot_path: 'C:/Users/skjel/axivity-pp-v2/Arbeidstid og NASA TLX T1 (vasket).csv'  # Path to the work-times CSV file
+ot_delimiter: ';'                               # Delimiter used in the work-times CSV
+min_shift_minutes: 60                           # Shifts shorter than this (in minutes) are excluded as standalone shifts and do not interrupt between-ot sections
+
+
+# --- Variable calculation ---
+# Toggle which variable categories are calculated.
 act_variables: True         # Activity counts and percentages per activity code
 ai_variables: True          # Active/inactive time counts and percentages
 walk_variables: True        # Walking intensity counts and percentages
@@ -70,66 +73,23 @@ ait_variables: True         # Active-inactive transitions (AIT) count
 bout_variables: True        # Bout counts per duration category
 nw_variables: True          # Non-wear percentages
 
+
+# --- Output files ---
+# Toggle which CSV files are written to results/.
+base_variables: True        # Subject metadata, recording info, and non-wear totals
+long_format: False          # Output daily and OT data in long format (one row per day/shift)
+na_rep: ''                  # Representation for missing data in output CSVs (e.g. '', '.', 'NA')
 daily_variables: True       # Per-day breakdown of all enabled variables
 average_variables: True     # Averages across all valid days
-week_wknd_variables: True   # Separate weekday and weekend averages
-ot_variables: True          # Work-shift vs non-work-shift breakdown (requires ot_run)
+week_wknd_variables: True   # Separate weekday and weekend averages (requires average_variables)
+ot_variables: True          # Work-shift breakdown (requires ot_path)
+between_ot_variables: True  # Between-ot breakdown (requires ot_variables)
 save_config: True           # Save a snapshot of the config used to results/ after each run
 
 
-# --- Activity codes ---
-# Numeric codes used in the activity prediction column. Must match the classifier output.
-codes:
-    walking: 1
-    running: 2
-    shuffling: 3
-    stairs_ascend: 4
-    stairs_descend: 5
-    standing: 6
-    sitting: 7
-    lying: 8
-    bending: 10
-    cycling: 13
-    cycling_stand: 14
-    jumping: 20
-    cyc_sit_inactive: 130
-    cyc_stand_inactive: 140
-    nw_both_sensors: 1
-    nw_back_only: 2
-    nw_thigh_only: 3
-    nw_no_sensors: 4
-
-# Code lists used for grouping in analysis
-nw_codes: [1, 2, 3, 4]                 # Non-wear status codes to report on
-act_codes_base: [1, 2, 6, 7, 8, 13]    # Base activity codes (extended at runtime by manage_config based on remove_stairs/merge_cyc_codes)
-cyc_codes: [14, 130, 140]              # Cycling variant codes (merged into cycling when merge_cyc_codes is True)
-stair_codes: [4, 5]                    # Stair codes (merged into walking when remove_stairs is True)
-walk_codes_base: [101, 102, 103]       # Walking intensity codes
-stair_walk_code: 104                   # Walking intensity code assigned to remapped stair epochs
-bout_codes: [1, 2, 6, 7, 8]           # Activity codes for which bout durations are counted
-
-
-# --- Bout duration categories ---
-# Duration ranges in seconds [min, max] for classifying bout lengths.
-# Used for both inactive (i_cat) and active (a_cat) bouts.
-i_cat:
-    1: [60, 300]
-    2: [301, 600]
-    3: [601, 1200]
-    4: [1201, 3600]
-    5: [3601, 9999999]
-a_cat:
-    1: [60, 300]
-    2: [301, 600]
-    3: [601, 1200]
-    4: [1201, 3600]
-    5: [3601, 9999999]
-noise_threshold: 0.15       # Max fraction of interruption allowed within a bout before it is split
-length_threshold: 20        # Minimum bout length in seconds to be counted
-
-
 # --- Barcode plot settings ---
-# Visual activity barcode plots (one row per day). Only used when barcode_run is True.
+# Visual activity barcode plots (one row per day).
+barcode_run: False          # Generate barcode activity plots
 barcode:
     padding_color: 'w'      # Color for padding/empty space
     upper_bound: 999         # Upper code bound for the "Other" category
@@ -151,6 +111,59 @@ barcode:
           lower: 9
 
 
+# --- Activity codes ---
+# Numeric codes used in the activity prediction column. Must match the classifier output.
+codes:
+    walking: 1
+    running: 2
+    shuffling: 3
+    stairs_ascend: 4
+    stairs_descend: 5
+    standing: 6
+    sitting: 7
+    lying: 8
+    bending: 10
+    cycling: 13
+    cycling_stand: 14
+    cyc_sit_inactive: 130
+    cyc_stand_inactive: 140
+    jumping: 20
+
+# Activity codes for which bout durations are counted (references codes block by name)
+bout_codes: ['walking', 'running', 'standing', 'sitting', 'lying']
+
+# Walking intensity codes
+walk_codes_base: [101, 102, 103]       # Walking intensity codes
+stair_walk_code: 104                   # Walking intensity code assigned to remapped stair epochs
+
+# Non-wear codes (from a separate prediction column)
+nw_codes: [1, 2, 3, 4]                # Non-wear status codes to report on
+nw_codes_map:
+    nw_both_sensors: 1
+    nw_back_only: 2
+    nw_thigh_only: 3
+    nw_no_sensors: 4
+
+
+# --- Bout duration categories ---
+# Duration ranges in seconds [min, max] for classifying bout lengths.
+# Used for both inactive (i_cat) and active (a_cat) bouts.
+i_cat:
+    1: [60, 300]
+    2: [301, 600]
+    3: [601, 1200]
+    4: [1201, 3600]
+    5: [3601, 9999999]
+a_cat:
+    1: [60, 300]
+    2: [301, 600]
+    3: [601, 1200]
+    4: [1201, 3600]
+    5: [3601, 9999999]
+noise_threshold: 0.15       # Max fraction of interruption allowed within a bout before it is split
+length_threshold: 20        # Minimum bout length in seconds to be counted
+
+
 # --- Display names ---
 # Human-readable names for each code, used as column name suffixes in output CSVs.
 code_name:
@@ -170,7 +183,7 @@ code_name:
     20: 'jumping'
     130: 'cyc_sit_inactive'
     140: 'cyc_stand_inactive'
-    101: '101'
-    102: '102'
-    103: '103'
-    104: '104'
+    101: 'slow'
+    102: 'moderate'
+    103: 'fast'
+    104: 'stairs'

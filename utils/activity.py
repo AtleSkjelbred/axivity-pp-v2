@@ -6,7 +6,7 @@ def count_codes(df, start, end, column, code):
     return (df[column][start:end].values == code).sum()
 
 
-def get_activities(df, index, date_info, ot_index, wrk_date_info, run_ot, codes, column):
+def get_activities(df, index, date_info, ot_index, wrk_date_info, ot_variables, codes, column):
     """Count activity epochs per day, with optional work/normal split."""
     temp = {}
 
@@ -15,7 +15,7 @@ def get_activities(df, index, date_info, ot_index, wrk_date_info, run_ot, codes,
 
         for code in codes:
             temp[day][code] = {'total': count_codes(df, start, end, column, code)}
-            if run_ot and ot_index:
+            if ot_variables and ot_index:
                 temp[day][code]['ot'] = get_wrk_act(df, index, date_info, ot_index, wrk_date_info, day,
                                                     column, code)
                 temp[day][code]['normal'] = temp[day][code]['total'] - temp[day][code]['ot']
