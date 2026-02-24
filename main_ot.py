@@ -54,6 +54,7 @@ def main(data_folder, settings):
             error_log.append({'file': csvfile, 'subject_id': subject_id, 'error': epd})
             continue
 
+        original_len = len(df)
         filter_info = {}
         df = filter_dataframe(filter_info, df, epm, settings)
 
@@ -65,6 +66,11 @@ def main(data_folder, settings):
         if ot_index:
             ot_index, between_index = get_between_shifts(ot_index, epm, epd, len(df), settings.get('min_shift_minutes', 60))
             new_line = build_output(df, subject_id, ot_index, between_index, epm, settings)
+            new_line['epoch_per_min'] = epm
+            new_line['epoch_per_day'] = epd
+            new_line['total_epochs'] = original_len
+            new_line['epochs_after_filter'] = len(df)
+            new_line['epochs_removed'] = filter_info.get('epochs_removed', 0)
             results.append(new_line)
 
     if not os.path.exists(results_path):
@@ -163,7 +169,7 @@ def build_output(df, subject_id, ot_index, between_index, epm, settings):
     act_codes = settings['act_codes']
     ai_codes = settings['ai_codes']
     code_name = settings['code_name']
-    line = {'subject_id': subject_id}
+    line = {'s ubject_id': subject_id}
 
     bout_codes = settings['bout_codes']
 
