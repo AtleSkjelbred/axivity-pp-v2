@@ -105,6 +105,10 @@ def main(data_folder, settings):
     outgoing_qc.to_csv(os.path.join(results_path, f'other time qc {timestamp}.csv'), index=False)
     outgoing_df.to_csv(os.path.join(results_path, f'post process data {timestamp}.csv'), index=False)
 
+    if settings.get('save_config', False):
+        with open(os.path.join(results_path, f'config {timestamp}.yaml'), 'w') as f:
+            yaml.dump(settings, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
     if error_log:
         error_df = pd.DataFrame(error_log)
         error_df.to_csv(os.path.join(results_path, f'error_log {timestamp}.csv'), index=False)

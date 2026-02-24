@@ -74,6 +74,7 @@ daily_variables: True       # Per-day breakdown of all enabled variables
 average_variables: True     # Averages across all valid days
 week_wknd_variables: True   # Separate weekday and weekend averages
 ot_variables: True          # Work-shift vs non-work-shift breakdown (requires ot_run)
+save_config: True           # Save a snapshot of the config used to results/ after each run
 
 
 # --- Activity codes ---
