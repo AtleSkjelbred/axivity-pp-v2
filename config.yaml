@@ -21,7 +21,7 @@ nw_column: 'snt_prediction'                     # Non-wear (sensor) prediction c
 # Used by both main.py and main_ot.py to match accelerometer data with work shifts.
 barcode_run: False                              # Generate barcode activity plots
 ot_run: True                                    # Enable work-shift analysis in main.py
-ot_path: 'C:/Users/skjel/axivity-pp-v1.5/Arbeidstid og NASA TLX T1 (vasket).csv'  # Path to the work-times CSV file
+ot_path: 'C:/Users/skjel/axivity-pp-v2/Arbeidstid og NASA TLX T1 (vasket).csv'  # Path to the work-times CSV file
 ot_delimiter: ';'                               # Delimiter used in the work-times CSV
 min_shift_minutes: 60                           # Shifts shorter than this (in minutes) are excluded as standalone shifts and do not interrupt between-shift sections
 

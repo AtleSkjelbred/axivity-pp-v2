@@ -27,8 +27,8 @@ from utils.other_time import other_times
 from utils.activity import count_codes
 from utils.transition import calculate_transitions
 from utils.bout import count_bouts
-from utils.df_filter import filter_dataframe
-from main import manage_config
+from utils.df_filter import filter_dataframe, filter_days
+from main import manage_config, get_index, shift_index_keys
 
 
 def main(data_folder, settings):
@@ -57,6 +57,15 @@ def main(data_folder, settings):
         original_len = len(df)
         filter_info = {}
         df = filter_dataframe(filter_info, df, epm, settings)
+
+        if settings['nw_days'] or settings['bug_days']:
+            index = get_index(df, settings['time_column'])
+            filter_days(df, index, settings, epd)
+            if index:
+                valid_rows = []
+                for start, end in index.values():
+                    valid_rows.extend(range(start, end))
+                df = df.iloc[sorted(valid_rows)].reset_index(drop=True)
 
         ot_index, ot_qc = other_times(df, subject_id, True, ot_df, settings['time_column'])
 
@@ -166,10 +175,14 @@ def build_output(df, subject_id, ot_index, between_index, epm, settings):
     """Calculate epoch counts and activity percentages per shift and between section."""
     act_column = settings['act_column']
     ai_column = settings['ai_column']
+    walk_column = settings['walk_column']
     act_codes = settings['act_codes']
     ai_codes = settings['ai_codes']
+    walk_codes = settings['walk_codes']
     code_name = settings['code_name']
-    line = {'s ubject_id': subject_id}
+    nw_column = settings['nw_column']
+    nw_codes = settings['nw_codes']
+    line = {'subject_id': subject_id}
 
     bout_codes = settings['bout_codes']
 
@@ -197,6 +210,14 @@ def build_output(df, subject_id, ot_index, between_index, epm, settings):
             count = count_codes(df, start, end, act_column, code)
             line[f'{prefix}_{code_name[code]}_min'] = round(count / epm, 2)
             line[f'{prefix}_{code_name[code]}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
+        walk_total = sum(count_codes(df, start, end, walk_column, c) for c in walk_codes)
+        for code in walk_codes:
+            count = count_codes(df, start, end, walk_column, code)
+            line[f'{prefix}_walk{code_name[code]}_min'] = round(count / epm, 2)
+            line[f'{prefix}_walk{code_name[code]}_pct'] = round(count / walk_total * 100, 2) if walk_total > 0 else None
+        for code in nw_codes:
+            count = count_codes(df, start, end, nw_column, code)
+            line[f'{prefix}_nw_code_{code}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
         line[f'{prefix}_ait'] = calculate_transitions(df, start, end, ai_column)
         bouts = count_bouts(df, start, end, epm, settings)
         for code in bout_codes:
@@ -227,6 +248,14 @@ def build_output(df, subject_id, ot_index, between_index, epm, settings):
                 count = sum(count_codes(df, start, end, act_column, code) for start, end in ranges)
                 line[f'{prefix}_{code_name[code]}_min'] = round(count / epm, 2)
                 line[f'{prefix}_{code_name[code]}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
+            walk_total = sum(count_codes(df, start, end, walk_column, c) for start, end in ranges for c in walk_codes)
+            for code in walk_codes:
+                count = sum(count_codes(df, start, end, walk_column, code) for start, end in ranges)
+                line[f'{prefix}_walk{code_name[code]}_min'] = round(count / epm, 2)
+                line[f'{prefix}_walk{code_name[code]}_pct'] = round(count / walk_total * 100, 2) if walk_total > 0 else None
+            for code in nw_codes:
+                count = sum(count_codes(df, start, end, nw_column, code) for start, end in ranges)
+                line[f'{prefix}_nw_code_{code}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
             line[f'{prefix}_ait'] = sum(calculate_transitions(df, start, end, ai_column) for start, end in ranges)
             combined_bouts = {}
             for start, end in ranges:
