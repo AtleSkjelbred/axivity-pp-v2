@@ -226,7 +226,7 @@ def map_shifts_to_index(df, shifts, timestamps, warnings):
 
     for nr, (start_dt, end_dt) in shifts.items():
         start_mask = timestamps >= pd.Timestamp(start_dt)
-        end_mask = timestamps > pd.Timestamp(end_dt)
+        end_mask = timestamps >= pd.Timestamp(end_dt) + pd.Timedelta(minutes=1)
 
         if not start_mask.any():
             warnings.append(f'Shift {nr}: start time not found in data, skipped')
