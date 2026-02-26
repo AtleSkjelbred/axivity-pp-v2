@@ -9,7 +9,8 @@ def other_times(df, subject_id, ot_variables, ot_df, time_column):
     entries, reporting issues in the QC output.
 
     Returns:
-        (ot_index, ot_qc): ot_index maps shift numbers to [start_idx, end_idx],
+        (ot_index, ot_qc): ot_index maps shift numbers to [start_idx, end_idx)
+        where end_idx is exclusive (first epoch after the shift's reported end time),
         or (False, ot_qc) if no valid shifts, or (False, False) if disabled.
     """
     if not ot_variables:
@@ -215,12 +216,17 @@ def validate_shifts(shifts, data_start, data_end, warnings):
 
 
 def map_shifts_to_index(df, shifts, timestamps, warnings):
-    """Map validated shift datetimes to dataframe row indices."""
+    """Map validated shift datetimes to dataframe row indices.
+
+    The reported end time is inclusive: the epoch at the end time is part of the
+    shift. Internally the index uses exclusive-end convention [start, end), so
+    end_idx points to the first epoch AFTER the reported end time.
+    """
     ot_index = {}
 
     for nr, (start_dt, end_dt) in shifts.items():
         start_mask = timestamps >= pd.Timestamp(start_dt)
-        end_mask = timestamps >= pd.Timestamp(end_dt)
+        end_mask = timestamps > pd.Timestamp(end_dt)
 
         if not start_mask.any():
             warnings.append(f'Shift {nr}: start time not found in data, skipped')

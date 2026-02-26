@@ -166,8 +166,8 @@ The output format depends on `long_format`:
 | `subject_id` | `subject_id` | Subject identifier |
 | — | `type` | Row type: `ot` (long format only) |
 | `ot{s}_nr` | `nr` | Shift sequence number |
-| `ot{s}_start_datetime` | `start_datetime` | Start time (dd.mm.yyyy HH:MM) |
-| `ot{s}_end_datetime` | `end_datetime` | End time (dd.mm.yyyy HH:MM) |
+| `ot{s}_start_datetime` | `start_datetime` | Start time, inclusive (dd.mm.yyyy HH:MM) |
+| `ot{s}_end_datetime` | `end_datetime` | End time, inclusive — timestamp of the last epoch in the shift (dd.mm.yyyy HH:MM) |
 | `ot{s}_start_wkday_nr` | `start_wkday_nr` | Weekday number (Monday=1 ... Sunday=7) |
 | `ot{s}_start_wkday_str` | `start_wkday_str` | Weekday name |
 | `ot{s}_epochs` | `epochs` | Length in epochs |
@@ -227,8 +227,8 @@ The output format depends on `long_format`:
 | `subject_id` | `subject_id` | Subject identifier |
 | — | `type` | Row type: `mod_ot` or `between` (long format only) |
 | `mod_ot{s}_nr` / `between{s}_nr` | `nr` | Sequence number |
-| `mod_ot{s}_start_datetime` / `between{s}_start_datetime` | `start_datetime` | Start time (dd.mm.yyyy HH:MM) |
-| `mod_ot{s}_end_datetime` / `between{s}_end_datetime` | `end_datetime` | End time (dd.mm.yyyy HH:MM) |
+| `mod_ot{s}_start_datetime` / `between{s}_start_datetime` | `start_datetime` | Start time, inclusive (dd.mm.yyyy HH:MM) |
+| `mod_ot{s}_end_datetime` / `between{s}_end_datetime` | `end_datetime` | End time, inclusive — timestamp of the last epoch in the section (dd.mm.yyyy HH:MM) |
 | `mod_ot{s}_start_wkday_nr` / `between{s}_start_wkday_nr` | `start_wkday_nr` | Weekday number (Monday=1 ... Sunday=7) |
 | `mod_ot{s}_start_wkday_str` / `between{s}_start_wkday_str` | `start_wkday_str` | Weekday name |
 | `mod_ot{s}_epochs` / `between{s}_epochs` | `epochs` | Length in epochs |

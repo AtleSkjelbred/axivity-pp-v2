@@ -176,6 +176,8 @@ Output formatting:
 
 ### Work-shift settings
 
+Shift start and end times are inclusive: a shift reported as 08:00–15:30 includes the epoch at 15:30. The between-ot period following that shift starts at the next epoch (15:31).
+
 | Setting | Description |
 |---------|-------------|
 | `ot_path` | Path to the work-times CSV file |

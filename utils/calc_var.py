@@ -217,10 +217,7 @@ def other_time_variables(new_line, df, wrk_index, ot_date_info, code_name, chose
         prefix = f'ot{shift}'
 
         start_datetime = datetime.strptime(df[time_col][start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-        if end in df.index:
-            end_datetime = datetime.strptime(df[time_col][end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-        else:
-            end_datetime = datetime.strptime(df[time_col][end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        end_datetime = datetime.strptime(df[time_col][end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
         new_line[f'{prefix}_nr'] = shift
         new_line[f'{prefix}_start_datetime'] = start_datetime
         new_line[f'{prefix}_end_datetime'] = end_datetime
@@ -275,10 +272,7 @@ def between_time_variables(new_line, df, wrk_index, code_name, chosen_var, bout_
         prefix = f'mod_ot{shift}'
 
         start_datetime = datetime.strptime(df[time_col][start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-        if end in df.index:
-            end_datetime = datetime.strptime(df[time_col][end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-        else:
-            end_datetime = datetime.strptime(df[time_col][end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        end_datetime = datetime.strptime(df[time_col][end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
         new_line[f'{prefix}_nr'] = shift
         new_line[f'{prefix}_start_datetime'] = start_datetime
         new_line[f'{prefix}_end_datetime'] = end_datetime
@@ -328,12 +322,8 @@ def between_time_variables(new_line, df, wrk_index, code_name, chosen_var, bout_
         new_line[f'{prefix}_nr'] = key
         new_line[f'{prefix}_start_datetime'] = datetime.strptime(
             df[time_col][b_start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-        if b_end in df.index:
-            new_line[f'{prefix}_end_datetime'] = datetime.strptime(
-                df[time_col][b_end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-        else:
-            new_line[f'{prefix}_end_datetime'] = datetime.strptime(
-                df[time_col][b_end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        new_line[f'{prefix}_end_datetime'] = datetime.strptime(
+            df[time_col][b_end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
         new_line[f'{prefix}_start_wkday_nr'] = datetime.strptime(
             df[time_col][b_start][:10], "%Y-%m-%d").weekday() + 1
         new_line[f'{prefix}_start_wkday_str'] = datetime.strptime(
@@ -485,10 +475,7 @@ def _build_ot_row(subject_id, row_type, nr, df, start_idx, end_idx, ranges,
     epochs = sum(end - start for start, end in ranges)
 
     start_datetime = datetime.strptime(df[time_col][start_idx][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-    if end_idx in df.index:
-        end_datetime = datetime.strptime(df[time_col][end_idx][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
-    else:
-        end_datetime = datetime.strptime(df[time_col][end_idx - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+    end_datetime = datetime.strptime(df[time_col][end_idx - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
 
     row = {'subject_id': subject_id, 'type': row_type, 'nr': nr,
            'start_datetime': start_datetime, 'end_datetime': end_datetime,
