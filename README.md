@@ -94,7 +94,8 @@ Each run creates a timestamped subfolder under `./results/` containing the outpu
 | `post process data.csv` | `base_variables` | Subject metadata, epoch info, recording dates, non-wear totals |
 | `average data.csv` | `average_variables` | Per-day averages (includes weekday/weekend if `week_wknd_variables` is True) |
 | `daily data.csv` | `daily_variables` | Per-day breakdown of all enabled variables |
-| `ot data.csv` | `ot_variables` | Per-shift variables (includes between-ot if `between_ot_variables` is True) |
+| `ot data.csv` | `ot_variables` | Per-shift variables for all raw work shifts (no filtering) |
+| `between ot data.csv` | `between_ot_variables` | Modified shifts (after min_shift filtering and merging) and between-ot period variables |
 | `other time qc.csv` | `ot_variables` | QC report for work-shift matching |
 | `config.yaml` | `save_config` | Snapshot of the config used for the run |
 | `error_log.csv` | When errors occur | Files that failed processing |
@@ -162,8 +163,8 @@ Toggle which CSV files are written to results/:
 | `daily_variables` | Per-day breakdown | — |
 | `average_variables` | Averages across all valid days | — |
 | `week_wknd_variables` | Weekday/weekend averages (in average file) | `average_variables` |
-| `ot_variables` | Work-shift breakdown + QC | valid `ot_path` |
-| `between_ot_variables` | Between-ot breakdown (in ot file) | `ot_variables` |
+| `ot_variables` | Raw work-shift breakdown + QC | valid `ot_path` |
+| `between_ot_variables` | Modified shifts and between-ot breakdown (separate file) | `ot_variables` |
 | `save_config` | Config snapshot | — |
 
 Output formatting:

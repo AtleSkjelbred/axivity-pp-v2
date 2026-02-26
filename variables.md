@@ -152,26 +152,87 @@ Per-day breakdown of all enabled variables. The output format depends on `long_f
 
 ## 4. OT Data (`ot_variables: True`)
 
-Per-shift and between-ot variables. Shifts shorter than `min_shift_minutes` (default 60) are excluded as standalone shifts. Consecutive adjacent shifts are merged.
+Per-shift variables for all raw work shifts. No filtering or merging is applied — every shift from the work-times file that passes basic validation (valid timestamps, within data range, no overlaps) is included.
 
 The output format depends on `long_format`:
 
-- **Wide format** (`long_format: False`, default): one row per subject, columns prefixed with `ot{s}_` and `between{s}_`
-- **Long format** (`long_format: True`): one row per shift/between section, no prefix, with a `type` column (`ot` or `between`)
+- **Wide format** (`long_format: False`, default): one row per subject, columns prefixed with `ot{s}_`
+- **Long format** (`long_format: True`): one row per shift, no prefix, with a `type` column (`ot`)
 
 ### Row Information
 
 | Wide column | Long column | Description |
 |-------------|-------------|-------------|
 | `subject_id` | `subject_id` | Subject identifier |
-| — | `type` | Row type: `ot` or `between` (long format only) |
-| `ot{s}_nr` / `between{s}_nr` | `nr` | Sequence number |
-| `ot{s}_start_datetime` / `between{s}_start_datetime` | `start_datetime` | Start time (dd.mm.yyyy HH:MM) |
-| `ot{s}_end_datetime` / `between{s}_end_datetime` | `end_datetime` | End time (dd.mm.yyyy HH:MM) |
-| `ot{s}_start_wkday_nr` / `between{s}_start_wkday_nr` | `start_wkday_nr` | Weekday number (Monday=1 ... Sunday=7) |
-| `ot{s}_start_wkday_str` / `between{s}_start_wkday_str` | `start_wkday_str` | Weekday name |
-| `ot{s}_epochs` / `between{s}_epochs` | `epochs` | Length in epochs |
-| `ot{s}_min` / `between{s}_min` | `min` | Length in minutes (epochs / epm) |
+| — | `type` | Row type: `ot` (long format only) |
+| `ot{s}_nr` | `nr` | Shift sequence number |
+| `ot{s}_start_datetime` | `start_datetime` | Start time (dd.mm.yyyy HH:MM) |
+| `ot{s}_end_datetime` | `end_datetime` | End time (dd.mm.yyyy HH:MM) |
+| `ot{s}_start_wkday_nr` | `start_wkday_nr` | Weekday number (Monday=1 ... Sunday=7) |
+| `ot{s}_start_wkday_str` | `start_wkday_str` | Weekday name |
+| `ot{s}_epochs` | `epochs` | Length in epochs |
+| `ot{s}_min` | `min` | Length in minutes (epochs / epm) |
+
+### Activity Counts
+
+For each code in the ai, act, and walk sets:
+
+| Wide column | Long column | Unit | Formula |
+|-------------|-------------|------|---------|
+| `ot{s}_{name}_min` | `{name}_min` | minutes | epoch count / epm |
+| `ot{s}_{name}_pct` | `{name}_pct` | % | epoch count / shift epochs * 100 |
+
+### Walking Intensity
+
+Percentage of total walking within the shift:
+
+| Wide column | Long column | Unit | Formula |
+|-------------|-------------|------|---------|
+| `ot{s}_walk{name}_min` | `walk{name}_min` | minutes | epoch count / epm |
+| `ot{s}_walk{name}_pct` | `walk{name}_pct` | % | epoch count / total walking epochs * 100 |
+
+### Non-Wear
+
+| Wide column | Long column | Unit | Formula |
+|-------------|-------------|------|---------|
+| `ot{s}_nw_code_{c}_pct` | `nw_code_{c}_pct` | % | epoch count / shift epochs * 100 |
+
+### AIT and Bouts
+
+| Wide column | Long column | Unit |
+|-------------|-------------|------|
+| `ot{s}_ait` | `ait` | AIT count (if `ait_variables`) |
+| `ot{s}_{name}_bout_c{n}` | `{name}_bout_c{n}` | Bout count in category n (if `bout_variables`) |
+
+---
+
+## 5. Between OT Data (`between_ot_variables: True`)
+
+Modified shift and between-period variables. Unlike the raw OT data, this file applies restrictions:
+- Shifts shorter than `min_shift_minutes` (default 60) are excluded as standalone shifts
+- Consecutive adjacent shifts are merged into one
+- Short (excluded) shifts within between-ot sections are carved out
+
+The file contains two types of entries: **modified shifts** (`mod_ot`) and **between-ot periods** (`between`).
+
+The output format depends on `long_format`:
+
+- **Wide format** (`long_format: False`, default): one row per subject, columns prefixed with `mod_ot{s}_` (modified shifts) and `between{s}_` (between periods)
+- **Long format** (`long_format: True`): one row per entry, no prefix, with a `type` column (`mod_ot` or `between`)
+
+### Row Information
+
+| Wide column | Long column | Description |
+|-------------|-------------|-------------|
+| `subject_id` | `subject_id` | Subject identifier |
+| — | `type` | Row type: `mod_ot` or `between` (long format only) |
+| `mod_ot{s}_nr` / `between{s}_nr` | `nr` | Sequence number |
+| `mod_ot{s}_start_datetime` / `between{s}_start_datetime` | `start_datetime` | Start time (dd.mm.yyyy HH:MM) |
+| `mod_ot{s}_end_datetime` / `between{s}_end_datetime` | `end_datetime` | End time (dd.mm.yyyy HH:MM) |
+| `mod_ot{s}_start_wkday_nr` / `between{s}_start_wkday_nr` | `start_wkday_nr` | Weekday number (Monday=1 ... Sunday=7) |
+| `mod_ot{s}_start_wkday_str` / `between{s}_start_wkday_str` | `start_wkday_str` | Weekday name |
+| `mod_ot{s}_epochs` / `between{s}_epochs` | `epochs` | Length in epochs |
+| `mod_ot{s}_min` / `between{s}_min` | `min` | Length in minutes (epochs / epm) |
 
 ### Activity Counts
 
@@ -204,11 +265,11 @@ Percentage of total walking within the section:
 | `{prefix}_ait` | `ait` | AIT count (if `ait_variables`) |
 | `{prefix}_{name}_bout_c{n}` | `{name}_bout_c{n}` | Bout count in category n (if `bout_variables`) |
 
-Where `{prefix}` is `ot{s}` or `between{s}` in wide format.
+Where `{prefix}` is `mod_ot{s}` or `between{s}` in wide format.
 
-### Between-OT Sections (`between_ot_variables: True`)
+### Between-OT Sections
 
-The between-ot section following each shift extends to the start of the next shift, capped at 24 hours and at the end of the data. Short (excluded) shifts within between sections are carved out, resulting in potentially multiple sub-ranges. Variables are summed across sub-ranges.
+The between-ot section following each modified shift extends to the start of the next modified shift, capped at 24 hours and at the end of the data. Short (excluded) shifts within between sections are carved out, resulting in potentially multiple sub-ranges. Variables are summed across sub-ranges.
 
 ---
 

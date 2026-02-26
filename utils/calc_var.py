@@ -47,14 +47,19 @@ def calculate_variables(df, subject_id, index, ot_index, date_info, ot_date_info
 
     if settings['ot_variables']:
         if settings['long_format']:
-            results['ot'] = other_time_variables_long(subject_id, df, ot_index, ot_date_info,
-                                                      code_name, chosen_var, bout_codes, settings, epm, epd)
+            ot_rows, between_rows = other_time_variables_long(subject_id, df, ot_index, ot_date_info,
+                                                              code_name, chosen_var, bout_codes, settings, epm, epd)
+            results['ot'] = ot_rows
+            if between_rows:
+                results['between_ot'] = between_rows
         else:
             ot_line = {'subject_id': subject_id}
             other_time_variables(ot_line, df, ot_index, ot_date_info, code_name, chosen_var, bout_codes, settings, epm)
-            if settings['between_ot_variables']:
-                between_time_variables(ot_line, df, ot_index, code_name, chosen_var, bout_codes, settings, epm, epd)
             results['ot'] = ot_line
+            if settings['between_ot_variables']:
+                between_line = {'subject_id': subject_id}
+                between_time_variables(between_line, df, ot_index, code_name, chosen_var, bout_codes, settings, epm, epd)
+                results['between_ot'] = between_line
 
     return results
 
@@ -251,12 +256,12 @@ def other_time_variables(new_line, df, wrk_index, ot_date_info, code_name, chose
 
 
 def between_time_variables(new_line, df, wrk_index, code_name, chosen_var, bout_codes, settings, epm, epd):
-    """Write per-between-ot datetime, activity, walking, non-wear, AIT, and bout variables."""
+    """Write modified shift and between-ot datetime, activity, walking, non-wear, AIT, and bout variables."""
     if not wrk_index:
         return
 
-    _, between_index = get_between_ot(wrk_index, epm, epd, len(df),
-                                          settings.get('min_shift_minutes', 60))
+    modified_shifts, between_index = get_between_ot(wrk_index, epm, epd, len(df),
+                                                    settings.get('min_shift_minutes', 60))
 
     time_col = settings['time_column']
     walk_codes = settings['walk_codes']
@@ -264,6 +269,52 @@ def between_time_variables(new_line, df, wrk_index, code_name, chosen_var, bout_
     nw_column = settings['nw_column']
     nw_codes = settings['nw_codes']
 
+    # Write modified shift variables (after min_shift filtering and adjacent merging)
+    for shift, (start, end) in modified_shifts.items():
+        epochs = end - start
+        prefix = f'mod_ot{shift}'
+
+        start_datetime = datetime.strptime(df[time_col][start][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        if end in df.index:
+            end_datetime = datetime.strptime(df[time_col][end][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        else:
+            end_datetime = datetime.strptime(df[time_col][end - 1][:16], "%Y-%m-%d %H:%M").strftime("%d.%m.%Y %H:%M")
+        new_line[f'{prefix}_nr'] = shift
+        new_line[f'{prefix}_start_datetime'] = start_datetime
+        new_line[f'{prefix}_end_datetime'] = end_datetime
+        new_line[f'{prefix}_start_wkday_nr'] = datetime.strptime(
+            df[time_col][start][:10], "%Y-%m-%d").weekday() + 1
+        new_line[f'{prefix}_start_wkday_str'] = datetime.strptime(
+            df[time_col][start][:10], "%Y-%m-%d").strftime('%A')
+        new_line[f'{prefix}_epochs'] = epochs
+        new_line[f'{prefix}_min'] = epochs / epm
+
+        for key2, dic in chosen_var.items():
+            for code in dic['codes']:
+                count = count_codes(df, start, end, dic['column'], code)
+                new_line[f'{prefix}_{code_name[code]}_min'] = round(count / epm, 2)
+                new_line[f'{prefix}_{code_name[code]}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
+
+        walk_total = sum(count_codes(df, start, end, walk_column, c) for c in walk_codes)
+        for code in walk_codes:
+            count = count_codes(df, start, end, walk_column, code)
+            new_line[f'{prefix}_walk{code_name[code]}_min'] = round(count / epm, 2)
+            new_line[f'{prefix}_walk{code_name[code]}_pct'] = round(count / walk_total * 100, 2) if walk_total > 0 else None
+
+        for code in nw_codes:
+            count = count_codes(df, start, end, nw_column, code)
+            new_line[f'{prefix}_nw_code_{code}_pct'] = round(count / epochs * 100, 2) if epochs > 0 else None
+
+        if settings['ait_variables']:
+            new_line[f'{prefix}_ait'] = calculate_transitions(df, start, end, settings['ai_column'])
+
+        if settings['bout_variables']:
+            bouts = count_bouts(df, start, end, epm, settings)
+            for code in bout_codes:
+                for cat, val in enumerate(bouts[code]):
+                    new_line[f'{prefix}_{code_name[code]}_bout_c{cat + 1}'] = val
+
+    # Write between-ot variables
     for key in sorted(between_index.keys()):
         ranges = between_index[key]
         if not ranges:
@@ -375,10 +426,14 @@ def daily_variables_long(subject_id, var, date_info, code_name, epd):
 
 def other_time_variables_long(subject_id, df, wrk_index, ot_date_info, code_name,
                               chosen_var, bout_codes, settings, epm, epd):
-    """Build long-format OT rows: one dict per shift and per between-ot section."""
-    rows = []
+    """Build long-format OT rows: one dict per shift and per between-ot section.
+
+    Returns (ot_rows, between_rows) as two separate lists.
+    """
+    ot_rows = []
+    between_rows = []
     if not wrk_index:
-        return rows
+        return ot_rows, between_rows
 
     time_col = settings['time_column']
     walk_codes = settings['walk_codes']
@@ -391,11 +446,22 @@ def other_time_variables_long(subject_id, df, wrk_index, ot_date_info, code_name
                             ot_date_info[shift]['day_nr'], ot_date_info[shift]['day_str'],
                             time_col, code_name, chosen_var, walk_codes, walk_column,
                             nw_column, nw_codes, bout_codes, settings, epm)
-        rows.append(row)
+        ot_rows.append(row)
 
     if settings['between_ot_variables']:
-        _, between_index = get_between_ot(wrk_index, epm, epd, len(df),
-                                          settings.get('min_shift_minutes', 60))
+        modified_shifts, between_index = get_between_ot(wrk_index, epm, epd, len(df),
+                                                        settings.get('min_shift_minutes', 60))
+        # Add modified shift rows (after min_shift filtering and adjacent merging)
+        for shift, (start, end) in modified_shifts.items():
+            wkday_nr = datetime.strptime(df[time_col][start][:10], "%Y-%m-%d").weekday() + 1
+            wkday_str = datetime.strptime(df[time_col][start][:10], "%Y-%m-%d").strftime('%A')
+            row = _build_ot_row(subject_id, 'mod_ot', shift, df, start, end, [(start, end)],
+                                wkday_nr, wkday_str, time_col, code_name, chosen_var,
+                                walk_codes, walk_column, nw_column, nw_codes, bout_codes,
+                                settings, epm)
+            between_rows.append(row)
+
+        # Add between-ot period rows
         for key in sorted(between_index.keys()):
             ranges = between_index[key]
             if not ranges:
@@ -407,9 +473,9 @@ def other_time_variables_long(subject_id, df, wrk_index, ot_date_info, code_name
                                 ranges, wkday_nr, wkday_str, time_col, code_name, chosen_var,
                                 walk_codes, walk_column, nw_column, nw_codes, bout_codes,
                                 settings, epm)
-            rows.append(row)
+            between_rows.append(row)
 
-    return rows
+    return ot_rows, between_rows
 
 
 def _build_ot_row(subject_id, row_type, nr, df, start_idx, end_idx, ranges,

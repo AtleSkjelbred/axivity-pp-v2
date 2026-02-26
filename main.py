@@ -15,7 +15,8 @@ Processes CSV files exported from Axivity sensors through a series of steps:
      - post process data: always (base subject metadata)
      - average data: when average_variables is True (includes weekday/weekend)
      - daily data: when daily_variables is True
-     - ot data: when ot_variables is True (shifts + between-ot sections)
+     - ot data: when ot_variables is True (work shifts only)
+     - between ot data: when between_ot_variables is True (between-shift sections)
      - other time qc: when ot_variables is True
 
 Usage:
@@ -50,6 +51,7 @@ def main(data_folder, settings):
     avg_results = []
     daily_results = []
     ot_results = []
+    between_ot_results = []
     qc_results = []
     error_log = []
     base_path = os.getcwd()
@@ -123,6 +125,11 @@ def main(data_folder, settings):
                     ot_results.extend(var_results['ot'])
                 else:
                     ot_results.append(var_results['ot'])
+            if 'between_ot' in var_results:
+                if settings['long_format']:
+                    between_ot_results.extend(var_results['between_ot'])
+                else:
+                    between_ot_results.append(var_results['between_ot'])
 
         if ot_qc:
             qc_results.append(ot_qc)
@@ -150,6 +157,10 @@ def main(data_folder, settings):
     if settings['ot_variables'] and ot_results:
         pd.DataFrame(ot_results).to_csv(
             os.path.join(run_path, 'ot data.csv'), index=False, na_rep=na_rep)
+
+    if settings['between_ot_variables'] and between_ot_results:
+        pd.DataFrame(between_ot_results).to_csv(
+            os.path.join(run_path, 'between ot data.csv'), index=False, na_rep=na_rep)
 
     if qc_results:
         pd.DataFrame(qc_results).to_csv(

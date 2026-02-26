@@ -82,8 +82,8 @@ na_rep: ''                  # Representation for missing data in output CSVs (e.
 daily_variables: True       # Per-day breakdown of all enabled variables
 average_variables: True     # Averages across all valid days
 week_wknd_variables: True   # Separate weekday and weekend averages (requires average_variables)
-ot_variables: True          # Work-shift breakdown (requires ot_path)
-between_ot_variables: True  # Between-ot breakdown (requires ot_variables)
+ot_variables: True          # Raw work-shift breakdown to ot data.csv (requires ot_path)
+between_ot_variables: True  # Modified shifts and between-ot breakdown to between ot data.csv (requires ot_variables)
 save_config: True           # Save a snapshot of the config used to results/ after each run
 
 
